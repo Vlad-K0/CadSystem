@@ -87,11 +87,35 @@ public class MainViewModel {
         subscribeToEvents();
 
         // Обновляем инфо-панель при изменении текущего сегмента или настроек
-        selectedSegment.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
+        selectedSegment.addListener((obs, oldSegment, newSegment) -> {
+            updateSegmentInfo(newSegment);
+            if (newSegment != null) {
+                isUpdatingFromCode = true;
+                x1.set(newSegment.start().x());
+                y1.set(newSegment.start().y());
+                x2.set(newSegment.end().x());
+                y2.set(newSegment.end().y());
+
+                Point startPolar = coordinateTransformer.toPolar(newSegment.start(), angleUnit.get());
+                Point endPolar = coordinateTransformer.toPolar(newSegment.end(), angleUnit.get());
+                r1.set(startPolar.x());
+                theta1.set(startPolar.y());
+                r2.set(endPolar.x());
+                theta2.set(endPolar.y());
+                isUpdatingFromCode = false;
+            }
+        });
         coordinateSystem.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
         angleUnit.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
 
         setupCoordinateListeners();
+
+        // Обновляем GridConfig при изменении шага сетки
+        gridStep.addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                setGridStep(newVal.doubleValue());
+            }
+        });
 
         logger.info("MainViewModel инициализирован");
     }
@@ -100,7 +124,7 @@ public class MainViewModel {
 
     public void addSegment(Point start, Point end) {
         try {
-            var segment = new Segment(start, end);
+            var segment = new Segment(start, end, getLineStyle());
             segments.add(segment);
             selectedSegment.set(segment);
 
@@ -126,6 +150,31 @@ public class MainViewModel {
             end = coordinateTransformer.toCartesian(new Point(r2.get(), theta2.get()), angleUnit.get());
         }
         addSegment(start, end);
+    }
+
+    public void updateSelectedSegment() {
+        Segment oldSegment = selectedSegment.get();
+        if (oldSegment == null) {
+            return;
+        }
+
+        Point start, end;
+        if (coordinateSystem.get() == CoordinateSystem.CARTESIAN) {
+            start = new Point(x1.get(), y1.get());
+            end = new Point(x2.get(), y2.get());
+        } else {
+            start = coordinateTransformer.toCartesian(new Point(r1.get(), theta1.get()), angleUnit.get());
+            end = coordinateTransformer.toCartesian(new Point(r2.get(), theta2.get()), angleUnit.get());
+        }
+
+        Segment newSegment = new Segment(start, end, oldSegment.style());
+
+        int index = segments.indexOf(oldSegment);
+        if (index != -1) {
+            segments.set(index, newSegment);
+            selectedSegment.set(newSegment);
+            logger.info("Отрезок обновлен: {} -> {}", oldSegment, newSegment);
+        }
     }
 
     public void selectSegmentAt(Point clickPoint) {

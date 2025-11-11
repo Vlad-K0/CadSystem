@@ -17,6 +17,5 @@ public record DrawingContext(
         String axisColor,
         double gridStep,
         boolean gridVisible,
-        boolean axisVisible,
-        LineStyle segmentStyle
+        boolean axisVisible
 ) { }

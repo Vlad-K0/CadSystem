@@ -240,6 +240,15 @@ public class App extends Application {
 
         // Привязка кнопки "Построить"
         buildSegmentButton.setOnAction(e -> viewModel.buildSegmentFromTextFields());
+        viewModel.selectedSegmentProperty().addListener((obs, oldSelection, newSelection) -> {
+            if (newSelection == null) {
+                buildSegmentButton.setText("Построить отрезок");
+                buildSegmentButton.setOnAction(e -> viewModel.buildSegmentFromTextFields());
+            } else {
+                buildSegmentButton.setText("Применить изменения");
+                buildSegmentButton.setOnAction(e -> viewModel.updateSelectedSegment());
+            }
+        });
 
         // 7. Связываем ViewModel с Renderer
         // Когда список сегментов в ViewModel меняется, мы перерисовываем
@@ -283,8 +292,7 @@ public class App extends Application {
                 viewModel.gridConfigProperty().get().axisColor(),
                 viewModel.gridConfigProperty().get().gridStep(),
                 viewModel.gridConfigProperty().get().showGrid(),
-                viewModel.gridConfigProperty().get().showAxis(),
-                viewModel.getLineStyle()
+                viewModel.gridConfigProperty().get().showAxis()
         );
         renderer.render(context);
     }

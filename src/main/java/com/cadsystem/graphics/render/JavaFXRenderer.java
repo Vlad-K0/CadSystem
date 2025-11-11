@@ -64,7 +64,7 @@ public class JavaFXRenderer implements Renderer {
         // Рисуем геометрические объекты
         for (Segment segment : context.segments()) {
             boolean isSelected = segment.equals(context.selectedSegment());
-            renderSegment(segment, context.segmentStyle(), isSelected);
+            renderSegment(segment, segment.style(), isSelected);
         }
 
         logger.debug("Отрисовка завершена");
