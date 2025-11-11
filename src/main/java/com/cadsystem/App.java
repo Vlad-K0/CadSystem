@@ -75,6 +75,7 @@ public class App extends Application {
         VBox leftPanel = new VBox(20);
         leftPanel.setPadding(new Insets(10));
         leftPanel.setStyle("-fx-border-color: #cccccc; -fx-border-width: 0 1 0 0;"); // Граница справа
+        leftPanel.setMinWidth(280);
 
         // Секция "Настройки"
         Label settingsTitle = new Label("Настройки");
@@ -368,6 +369,7 @@ public class App extends Application {
 
         // Инициализация цветов
         segmentColorPicker.setValue(Color.web(viewModel.segmentColorProperty().get()));
+        viewModel.segmentColorProperty().addListener((obs, oldC, newC) -> segmentColorPicker.setValue(Color.web(newC)));
         backgroundColorPicker.setValue(Color.web(viewModel.backgroundColorProperty().get()));
         gridColorPicker.setValue(Color.web(viewModel.gridColorProperty().get()));
 

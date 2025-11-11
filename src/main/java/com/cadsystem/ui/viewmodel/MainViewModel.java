@@ -91,6 +91,7 @@ public class MainViewModel {
             updateSegmentInfo(newSegment);
             if (newSegment != null) {
                 isUpdatingFromCode = true;
+                // Обновляем поля ввода координат
                 x1.set(newSegment.start().x());
                 y1.set(newSegment.start().y());
                 x2.set(newSegment.end().x());
@@ -102,6 +103,10 @@ public class MainViewModel {
                 theta1.set(startPolar.y());
                 r2.set(endPolar.x());
                 theta2.set(endPolar.y());
+
+                // Обновляем ColorPicker цветом выделенного отрезка
+                segmentColor.set(newSegment.style().color());
+
                 isUpdatingFromCode = false;
             }
         });
@@ -114,6 +119,36 @@ public class MainViewModel {
         gridStep.addListener((obs, oldVal, newVal) -> {
             if (newVal != null) {
                 setGridStep(newVal.doubleValue());
+            }
+        });
+
+        // Обновляем GridConfig при изменении цвета сетки
+        gridColor.addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                gridConfig.set(new GridConfig(
+                        gridConfig.get().gridStep(),
+                        newVal,
+                        gridConfig.get().showGrid(),
+                        gridConfig.get().axisColor(),
+                        gridConfig.get().showAxis()
+                ));
+            }
+        });
+
+        // Обновляем цвет выделенного отрезка
+        segmentColor.addListener((obs, oldColor, newColor) -> {
+            if (isUpdatingFromCode) return;
+
+            Segment selected = selectedSegment.get();
+            if (selected != null && newColor != null && !newColor.equals(oldColor)) {
+                LineStyle newStyle = new LineStyle(newColor, selected.style().thickness(), selected.style().strokeType());
+                Segment updatedSegment = new Segment(selected.start(), selected.end(), newStyle);
+
+                int index = segments.indexOf(selected);
+                if (index != -1) {
+                    segments.set(index, updatedSegment);
+                    selectedSegment.set(updatedSegment);
+                }
             }
         });
 
