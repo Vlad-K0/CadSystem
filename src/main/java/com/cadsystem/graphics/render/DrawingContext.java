@@ -11,6 +11,7 @@ import java.util.List;
  */
 public record DrawingContext(
         List<Segment> segments,
+        Segment selectedSegment,
         String backgroundColor,
         String gridColor,
         String axisColor,

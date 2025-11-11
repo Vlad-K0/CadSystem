@@ -57,4 +57,20 @@ public class GeometryCalculator {
                      (q.x() - p.x()) * (r.y() - q.y());
         return val;
     }
+
+    public double distanceToPoint(Segment segment, Point point) {
+        double l2 = segment.length() * segment.length();
+        if (l2 == 0.0) return point.distanceTo(segment.start());
+
+        double t = ((point.x() - segment.start().x()) * (segment.end().x() - segment.start().x()) +
+                    (point.y() - segment.start().y()) * (segment.end().y() - segment.start().y())) / l2;
+        t = Math.max(0, Math.min(1, t));
+
+        Point projection = new Point(
+                segment.start().x() + t * (segment.end().x() - segment.start().x()),
+                segment.start().y() + t * (segment.end().y() - segment.start().y())
+        );
+
+        return point.distanceTo(projection);
+    }
 }

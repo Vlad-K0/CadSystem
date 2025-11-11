@@ -52,7 +52,8 @@ public class ApplicationConfiguration {
                 MainViewModel.class,
                 () -> new MainViewModel(
                         container.resolve(EventBus.class),
-                        container.resolve(CoordinateTransformer.class)
+                        container.resolve(CoordinateTransformer.class),
+                        container.resolve(GeometryCalculator.class)
                 )
         );
 

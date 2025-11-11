@@ -244,6 +244,7 @@ public class App extends Application {
         // 7. Связываем ViewModel с Renderer
         // Когда список сегментов в ViewModel меняется, мы перерисовываем
         viewModel.segmentsProperty().addListener((obs, oldList, newList) -> redraw());
+        viewModel.selectedSegmentProperty().addListener(obs -> redraw());
         viewModel.gridConfigProperty().addListener(obs -> redraw());
         viewModel.backgroundColorProperty().addListener(obs -> redraw());
         viewModel.lineStyleProperty().addListener(obs -> redraw());
@@ -276,6 +277,7 @@ public class App extends Application {
     private void redraw() {
         var context = new DrawingContext(
                 viewModel.segmentsProperty().get(), // Берем сегменты из VM
+                viewModel.selectedSegmentProperty().get(),
                 viewModel.backgroundColorProperty().get(), // Фон из VM
                 viewModel.gridConfigProperty().get().gridColor(),
                 viewModel.gridConfigProperty().get().axisColor(),
@@ -401,7 +403,7 @@ public class App extends Application {
                 break;
 
             case IDLE:
-                // Ничего не делаем
+                viewModel.selectSegmentAt(new Point(coordX, coordY));
                 break;
         }
     }

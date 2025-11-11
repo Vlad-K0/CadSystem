@@ -63,7 +63,8 @@ public class JavaFXRenderer implements Renderer {
 
         // Рисуем геометрические объекты
         for (Segment segment : context.segments()) {
-            renderSegment(segment, context.segmentStyle());
+            boolean isSelected = segment.equals(context.selectedSegment());
+            renderSegment(segment, context.segmentStyle(), isSelected);
         }
 
         logger.debug("Отрисовка завершена");
@@ -124,9 +125,15 @@ public class JavaFXRenderer implements Renderer {
         logger.debug("Оси координат отрисованы");
     }
 
-    private void renderSegment(Segment segment, LineStyle style) {
+    private void renderSegment(Segment segment, LineStyle style, boolean isSelected) {
         gc.setStroke(Color.web(style.color()));
         gc.setLineWidth(style.thickness());
+
+        if (isSelected) {
+            gc.setLineDashes(10, 5);
+        } else {
+            gc.setLineDashes(0);
+        }
 
         // Преобразуем координаты в экранные координаты
         double x1 = canvasXFromCoordinate(segment.start().x());
@@ -144,7 +151,7 @@ public class JavaFXRenderer implements Renderer {
         gc.fillOval(x2 - markerSize / 2, y2 - markerSize / 2,
                 markerSize, markerSize);
 
-        logger.debug("Отрезок отрисован: {}", segment);
+        logger.debug("Отрезок отрисован: {}, isSelected: {}", segment, isSelected);
     }
 
     // Преобразование декартовой X в X канваса

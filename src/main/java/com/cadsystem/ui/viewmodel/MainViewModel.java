@@ -5,6 +5,7 @@ import com.cadsystem.domain.event.SegmentCreatedEvent;
 import com.cadsystem.domain.event.SettingsChangedEvent;
 import com.cadsystem.domain.model.*;
 import com.cadsystem.domain.service.CoordinateTransformer;
+import com.cadsystem.domain.service.GeometryCalculator;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import org.slf4j.Logger;
@@ -23,12 +24,13 @@ public class MainViewModel {
 
     private final EventBus eventBus;
     private final CoordinateTransformer coordinateTransformer;
+    private final GeometryCalculator geometryCalculator;
 
     // --- Состояние Модели (Данные) ---
     private final ListProperty<Segment> segments =
             new SimpleListProperty<>(FXCollections.observableArrayList());
 
-    private final SimpleObjectProperty<Segment> currentSegment =
+    private final SimpleObjectProperty<Segment> selectedSegment =
             new SimpleObjectProperty<>();
 
     // --- Состояние Настроек (Конфигурация) ---
@@ -73,19 +75,21 @@ public class MainViewModel {
 
     public MainViewModel(
             EventBus eventBus,
-            CoordinateTransformer coordinateTransformer
+            CoordinateTransformer coordinateTransformer,
+            GeometryCalculator geometryCalculator
     ) {
         this.eventBus = Objects.requireNonNull(eventBus);
         this.coordinateTransformer = Objects.requireNonNull(
                 coordinateTransformer
         );
+        this.geometryCalculator = Objects.requireNonNull(geometryCalculator);
 
         subscribeToEvents();
 
         // Обновляем инфо-панель при изменении текущего сегмента или настроек
-        currentSegment.addListener(obs -> updateSegmentInfo(currentSegment.get()));
-        coordinateSystem.addListener(obs -> updateSegmentInfo(currentSegment.get()));
-        angleUnit.addListener(obs -> updateSegmentInfo(currentSegment.get()));
+        selectedSegment.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
+        coordinateSystem.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
+        angleUnit.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
 
         setupCoordinateListeners();
 
@@ -98,7 +102,7 @@ public class MainViewModel {
         try {
             var segment = new Segment(start, end);
             segments.add(segment);
-            currentSegment.set(segment);
+            selectedSegment.set(segment);
 
             // Публикуем событие
             eventBus.publish(
@@ -124,16 +128,39 @@ public class MainViewModel {
         addSegment(start, end);
     }
 
+    public void selectSegmentAt(Point clickPoint) {
+        Segment closestSegment = null;
+        double minDistance = Double.MAX_VALUE;
+
+        for (Segment segment : segments) {
+            double distance = geometryCalculator.distanceToPoint(segment, clickPoint);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestSegment = segment;
+            }
+        }
+
+        // Порог для выбора (например, 10 пикселей)
+        double selectionTolerance = 10.0;
+        if (closestSegment != null && minDistance < selectionTolerance) {
+            selectedSegment.set(closestSegment);
+            logger.info("Выбран отрезок: {}", closestSegment);
+        } else {
+            selectedSegment.set(null);
+            logger.info("Ни один отрезок не выбран");
+        }
+    }
+
     public void clearCurrentSegment() {
-        currentSegment.set(null);
+        selectedSegment.set(null);
         logger.info("Текущий отрезок очищен");
     }
 
     public void deleteCurrentSegment() {
-        Segment current = currentSegment.get();
+        Segment current = selectedSegment.get();
         if (current != null) {
             segments.remove(current);
-            currentSegment.set(null);
+            selectedSegment.set(null);
             logger.info("Отрезок удалён");
         }
     }
@@ -298,8 +325,8 @@ public class MainViewModel {
         return segments;
     }
 
-    public ObjectProperty<Segment> currentSegmentProperty() {
-        return currentSegment;
+    public ObjectProperty<Segment> selectedSegmentProperty() {
+        return selectedSegment;
     }
 
     public ObjectProperty<CoordinateSystem> coordinateSystemProperty() {
