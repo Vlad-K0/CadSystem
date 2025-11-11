@@ -7,7 +7,7 @@ import java.util.Objects;
  * Отрезок, определяемый двумя точками.
  * Неизменяемый data carrier.
  */
-public record Segment(Point start, Point end) implements Serializable {
+public record Segment(Point start, Point end, LineStyle style) implements Serializable {
 
     public Segment {
         Objects.requireNonNull(start, "Начальная точка не может быть null");
@@ -47,8 +47,8 @@ public record Segment(Point start, Point end) implements Serializable {
     @Override
     public String toString() {
         return String.format(
-                "Segment[start=(%.2f,%.2f), end=(%.2f,%.2f), length=%.2f]",
-                start.x(), start.y(), end.x(), end.y(), length()
+                "Segment[start=(%.2f,%.2f), end=(%.2f,%.2f), length=%.2f, style=%s]",
+                start.x(), start.y(), end.x(), end.y(), length(), style
         );
     }
 }

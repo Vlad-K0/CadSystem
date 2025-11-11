@@ -25,6 +25,10 @@ public class JavaFXRenderer implements Renderer {
     private GraphicsContext gc;
     private final EventBus eventBus;
 
+    private double scale = 1.0;
+    private double offsetX = 0.0;
+    private double offsetY = 0.0;
+
     public JavaFXRenderer(Canvas canvas, EventBus eventBus) {
         this.eventBus = Objects.requireNonNull(eventBus);
         setCanvas(canvas); // Используем метод для инициализации
@@ -49,6 +53,10 @@ public class JavaFXRenderer implements Renderer {
         }
         Objects.requireNonNull(context);
 
+        this.scale = context.scale();
+        this.offsetX = context.viewOffsetX();
+        this.offsetY = context.viewOffsetY();
+
         // Очищаем canvas
         clearCanvas(context.backgroundColor());
 
@@ -63,7 +71,8 @@ public class JavaFXRenderer implements Renderer {
 
         // Рисуем геометрические объекты
         for (Segment segment : context.segments()) {
-            renderSegment(segment, context.segmentStyle());
+            boolean isSelected = segment.equals(context.selectedSegment());
+            renderSegment(segment, segment.style(), isSelected);
         }
 
         logger.debug("Отрисовка завершена");
@@ -76,19 +85,21 @@ public class JavaFXRenderer implements Renderer {
     }
 
     private void renderGrid(DrawingContext context) {
+        // Сбрасываем стиль линии на сплошной
+        gc.setLineDashes(0);
         gc.setStroke(Color.web(context.gridColor()));
         gc.setLineWidth(0.5);
 
-        double gridStep = context.gridStep();
+        double gridStep = context.gridStep() * scale;
         double width = canvas.getWidth();
         double height = canvas.getHeight();
 
         // Центр (0,0) в декартовых координатах
-        double centerX = width / 2;
-        double centerY = height / 2;
+        double centerX = width / 2 + offsetX;
+        double centerY = height / 2 + offsetY;
 
         // Вертикальные линии
-        for (double x = centerX + gridStep; x < width; x += gridStep) {
+        for (double x = centerX; x < width; x += gridStep) {
             gc.strokeLine(x, 0, x, height);
         }
         for (double x = centerX - gridStep; x > 0; x -= gridStep) {
@@ -96,7 +107,7 @@ public class JavaFXRenderer implements Renderer {
         }
 
         // Горизонтальные линии
-        for (double y = centerY + gridStep; y < height; y += gridStep) {
+        for (double y = centerY; y < height; y += gridStep) {
             gc.strokeLine(0, y, width, y);
         }
         for (double y = centerY - gridStep; y > 0; y -= gridStep) {
@@ -107,10 +118,12 @@ public class JavaFXRenderer implements Renderer {
     }
 
     private void renderAxis(DrawingContext context) {
+        // Сбрасываем стиль линии на сплошной
+        gc.setLineDashes(0);
         double width = canvas.getWidth();
         double height = canvas.getHeight();
-        double centerX = width / 2;
-        double centerY = height / 2;
+        double centerX = width / 2 + offsetX;
+        double centerY = height / 2 + offsetY;
 
         gc.setStroke(Color.web(context.axisColor()));
         gc.setLineWidth(1.0); // Оси могут быть чуть толще сетки
@@ -124,9 +137,15 @@ public class JavaFXRenderer implements Renderer {
         logger.debug("Оси координат отрисованы");
     }
 
-    private void renderSegment(Segment segment, LineStyle style) {
+    private void renderSegment(Segment segment, LineStyle style, boolean isSelected) {
         gc.setStroke(Color.web(style.color()));
         gc.setLineWidth(style.thickness());
+
+        if (isSelected) {
+            gc.setLineDashes(10, 5);
+        } else {
+            gc.setLineDashes(0);
+        }
 
         // Преобразуем координаты в экранные координаты
         double x1 = canvasXFromCoordinate(segment.start().x());
@@ -144,16 +163,16 @@ public class JavaFXRenderer implements Renderer {
         gc.fillOval(x2 - markerSize / 2, y2 - markerSize / 2,
                 markerSize, markerSize);
 
-        logger.debug("Отрезок отрисован: {}", segment);
+        logger.debug("Отрезок отрисован: {}, isSelected: {}", segment, isSelected);
     }
 
     // Преобразование декартовой X в X канваса
     private double canvasXFromCoordinate(double x) {
-        return canvas.getWidth() / 2 + x;
+        return (canvas.getWidth() / 2) + offsetX + x * scale;
     }
 
     // Преобразование декартовой Y в Y канваса (Y инвертирована)
     private double canvasYFromCoordinate(double y) {
-        return canvas.getHeight() / 2 - y;
+        return (canvas.getHeight() / 2) + offsetY - y * scale;
     }
 }

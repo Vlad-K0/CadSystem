@@ -5,6 +5,7 @@ import com.cadsystem.domain.event.SegmentCreatedEvent;
 import com.cadsystem.domain.event.SettingsChangedEvent;
 import com.cadsystem.domain.model.*;
 import com.cadsystem.domain.service.CoordinateTransformer;
+import com.cadsystem.domain.service.GeometryCalculator;
 import javafx.beans.property.*;
 import javafx.collections.FXCollections;
 import org.slf4j.Logger;
@@ -23,12 +24,13 @@ public class MainViewModel {
 
     private final EventBus eventBus;
     private final CoordinateTransformer coordinateTransformer;
+    private final GeometryCalculator geometryCalculator;
 
     // --- Состояние Модели (Данные) ---
     private final ListProperty<Segment> segments =
             new SimpleListProperty<>(FXCollections.observableArrayList());
 
-    private final SimpleObjectProperty<Segment> currentSegment =
+    private final SimpleObjectProperty<Segment> selectedSegment =
             new SimpleObjectProperty<>();
 
     // --- Состояние Настроек (Конфигурация) ---
@@ -44,20 +46,117 @@ public class MainViewModel {
     private final SimpleObjectProperty<GridConfig> gridConfig =
             new SimpleObjectProperty<>(GridConfig.DEFAULT);
 
-    private final SimpleObjectProperty<LineStyle> lineStyle =
+    private final ObjectProperty<LineStyle> lineStyle =
             new SimpleObjectProperty<>(LineStyle.DEFAULT);
+
+    // Новые свойства для цветов
+    private final StringProperty segmentColor = new SimpleStringProperty("#000000"); // Черный по умолчанию
+    private final StringProperty backgroundColor = new SimpleStringProperty("#FFFFFF"); // Белый по умолчанию
+    private final StringProperty gridColor = new SimpleStringProperty("#CCCCCC");     // Серый по умолчанию
+
+    // --- Свойства для ввода координат ---
+    private final DoubleProperty x1 = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty y1 = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty x2 = new SimpleDoubleProperty(100.0);
+    private final DoubleProperty y2 = new SimpleDoubleProperty(100.0);
+
+    private final DoubleProperty r1 = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty theta1 = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty r2 = new SimpleDoubleProperty(141.4);
+    private final DoubleProperty theta2 = new SimpleDoubleProperty(45.0);
+
+    // --- Свойства для информационной панели ---
+    private final StringProperty startPointInfo = new SimpleStringProperty("-");
+    private final StringProperty endPointInfo = new SimpleStringProperty("-");
+    private boolean isUpdatingFromCode = false;
+    private final StringProperty segmentLengthInfo = new SimpleStringProperty("-");
+    private final StringProperty segmentAngleInfo = new SimpleStringProperty("-");
+
+    // --- Свойства для трансформации вида (Pan & Zoom) ---
+    private final DoubleProperty scale = new SimpleDoubleProperty(1.0);
+    private final DoubleProperty viewOffsetX = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty viewOffsetY = new SimpleDoubleProperty(0.0);
 
 
     public MainViewModel(
             EventBus eventBus,
-            CoordinateTransformer coordinateTransformer
+            CoordinateTransformer coordinateTransformer,
+            GeometryCalculator geometryCalculator
     ) {
         this.eventBus = Objects.requireNonNull(eventBus);
         this.coordinateTransformer = Objects.requireNonNull(
                 coordinateTransformer
         );
+        this.geometryCalculator = Objects.requireNonNull(geometryCalculator);
 
         subscribeToEvents();
+
+        // Обновляем инфо-панель при изменении текущего сегмента или настроек
+        selectedSegment.addListener((obs, oldSegment, newSegment) -> {
+            updateSegmentInfo(newSegment);
+            if (newSegment != null) {
+                isUpdatingFromCode = true;
+                // Обновляем поля ввода координат
+                x1.set(newSegment.start().x());
+                y1.set(newSegment.start().y());
+                x2.set(newSegment.end().x());
+                y2.set(newSegment.end().y());
+
+                Point startPolar = coordinateTransformer.toPolar(newSegment.start(), angleUnit.get());
+                Point endPolar = coordinateTransformer.toPolar(newSegment.end(), angleUnit.get());
+                r1.set(startPolar.x());
+                theta1.set(startPolar.y());
+                r2.set(endPolar.x());
+                theta2.set(endPolar.y());
+
+                // Обновляем ColorPicker цветом выделенного отрезка
+                segmentColor.set(newSegment.style().color());
+
+                isUpdatingFromCode = false;
+            }
+        });
+        coordinateSystem.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
+        angleUnit.addListener(obs -> updateSegmentInfo(selectedSegment.get()));
+
+        setupCoordinateListeners();
+
+        // Обновляем GridConfig при изменении шага сетки
+        gridStep.addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                setGridStep(newVal.doubleValue());
+            }
+        });
+
+        // Обновляем GridConfig при изменении цвета сетки
+        gridColor.addListener((obs, oldVal, newVal) -> {
+            if (newVal != null) {
+                gridConfig.set(new GridConfig(
+                        gridConfig.get().gridStep(),
+                        newVal,
+                        gridConfig.get().showGrid(),
+                        gridConfig.get().axisColor(),
+                        gridConfig.get().showAxis()
+                ));
+            }
+        });
+
+        // Обновляем цвет выделенного отрезка
+        segmentColor.addListener((obs, oldColor, newColor) -> {
+            if (isUpdatingFromCode) return;
+
+            Segment selected = selectedSegment.get();
+            if (selected != null && newColor != null && !newColor.equals(oldColor)) {
+                LineStyle newStyle = new LineStyle(newColor, selected.style().thickness(), selected.style().strokeType());
+                Segment updatedSegment = new Segment(selected.start(), selected.end(), newStyle);
+
+                int index = segments.indexOf(selected);
+                if (index != -1) {
+                    segments.set(index, updatedSegment);
+                    selectedSegment.set(updatedSegment);
+                }
+            }
+        });
+
         logger.info("MainViewModel инициализирован");
     }
 
@@ -65,9 +164,9 @@ public class MainViewModel {
 
     public void addSegment(Point start, Point end) {
         try {
-            var segment = new Segment(start, end);
+            var segment = new Segment(start, end, getLineStyle());
             segments.add(segment);
-            currentSegment.set(segment);
+            selectedSegment.set(segment);
 
             // Публикуем событие
             eventBus.publish(
@@ -77,15 +176,80 @@ public class MainViewModel {
             logger.info("Отрезок добавлен: {}", segment);
         } catch (Exception e) {
             logger.error("Ошибка добавления отрезка", e);
-            // Здесь можно отправить событие UI_ERROR
+            // Здесь можно отправить собые UI_ERROR
         }
     }
 
+    public void buildSegmentFromTextFields() {
+        Point start, end;
+        if (coordinateSystem.get() == CoordinateSystem.CARTESIAN) {
+            start = new Point(x1.get(), y1.get());
+            end = new Point(x2.get(), y2.get());
+        } else {
+            start = coordinateTransformer.toCartesian(new Point(r1.get(), theta1.get()), angleUnit.get());
+            end = coordinateTransformer.toCartesian(new Point(r2.get(), theta2.get()), angleUnit.get());
+        }
+        addSegment(start, end);
+    }
+
+    public void updateSelectedSegment() {
+        Segment oldSegment = selectedSegment.get();
+        if (oldSegment == null) {
+            return;
+        }
+
+        Point start, end;
+        if (coordinateSystem.get() == CoordinateSystem.CARTESIAN) {
+            start = new Point(x1.get(), y1.get());
+            end = new Point(x2.get(), y2.get());
+        } else {
+            start = coordinateTransformer.toCartesian(new Point(r1.get(), theta1.get()), angleUnit.get());
+            end = coordinateTransformer.toCartesian(new Point(r2.get(), theta2.get()), angleUnit.get());
+        }
+
+        Segment newSegment = new Segment(start, end, oldSegment.style());
+
+        int index = segments.indexOf(oldSegment);
+        if (index != -1) {
+            segments.set(index, newSegment);
+            selectedSegment.set(newSegment);
+            logger.info("Отрезок обновлен: {} -> {}", oldSegment, newSegment);
+        }
+    }
+
+    public void selectSegmentAt(Point clickPoint) {
+        Segment closestSegment = null;
+        double minDistance = Double.MAX_VALUE;
+
+        for (Segment segment : segments) {
+            double distance = geometryCalculator.distanceToPoint(segment, clickPoint);
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestSegment = segment;
+            }
+        }
+
+        // Порог для выбора (например, 10 пикселей)
+        double selectionTolerance = 10.0;
+        if (closestSegment != null && minDistance < selectionTolerance) {
+            selectedSegment.set(closestSegment);
+            logger.info("Выбран отрезок: {}", closestSegment);
+        } else {
+            selectedSegment.set(null);
+            logger.info("Ни один отрезок не выбран");
+        }
+    }
+
+    public void clearCurrentSegment() {
+        selectedSegment.set(null);
+        logger.info("Текущий отрезок очищен");
+    }
+
     public void deleteCurrentSegment() {
-        Segment current = currentSegment.get();
+        Segment current = selectedSegment.get();
         if (current != null) {
             segments.remove(current);
-            currentSegment.set(null);
+            selectedSegment.set(null);
             logger.info("Отрезок удалён");
         }
     }
@@ -112,6 +276,124 @@ public class MainViewModel {
         ));
     }
 
+    private void updateSegmentInfo(Segment segment) {
+        if (segment == null) {
+            startPointInfo.set("-");
+            endPointInfo.set("-");
+            segmentLengthInfo.set("-");
+            segmentAngleInfo.set("-");
+            return;
+        }
+
+        Point start = segment.start();
+        Point end = segment.end();
+
+        // Форматирование координат в зависимости от выбранной системы
+        String startStr, endStr;
+        if (coordinateSystem.get() == CoordinateSystem.CARTESIAN) {
+            startStr = String.format("x: %.2f, y: %.2f", start.x(), start.y());
+            endStr = String.format("x: %.2f, y: %.2f", end.x(), end.y());
+        } else {
+            Point startPolar = coordinateTransformer.toPolar(start, angleUnit.get());
+            Point endPolar = coordinateTransformer.toPolar(end, angleUnit.get());
+            startStr = String.format("r: %.2f, θ: %.2f", startPolar.x(), startPolar.y());
+            endStr = String.format("r: %.2f, θ: %.2f", endPolar.x(), endPolar.y());
+        }
+
+        startPointInfo.set(startStr);
+        endPointInfo.set(endStr);
+        segmentLengthInfo.set(String.format("%.2f", segment.length()));
+
+        // Угол наклона
+        double angle = segment.angleRadians(); // в радианах
+        if (angleUnit.get() == AngleUnit.DEGREES) {
+            angle = Math.toDegrees(angle);
+        }
+        segmentAngleInfo.set(String.format("%.2f", angle));
+    }
+
+    private void setupCoordinateListeners() {
+        x1.addListener((obs, oldV, newV) -> handleCartesianUpdate(
+                () -> {
+                    Point polar = coordinateTransformer.toPolar(
+                            new Point(newV.doubleValue(), y1.get()), angleUnit.get());
+                    r1.set(polar.x());
+                    theta1.set(polar.y());
+                }
+        ));
+        y1.addListener((obs, oldV, newV) -> handleCartesianUpdate(
+                () -> {
+                    Point polar = coordinateTransformer.toPolar(
+                            new Point(x1.get(), newV.doubleValue()), angleUnit.get());
+                    r1.set(polar.x());
+                    theta1.set(polar.y());
+                }
+        ));
+        x2.addListener((obs, oldV, newV) -> handleCartesianUpdate(
+                () -> {
+                    Point polar = coordinateTransformer.toPolar(
+                            new Point(newV.doubleValue(), y2.get()), angleUnit.get());
+                    r2.set(polar.x());
+                    theta2.set(polar.y());
+                }
+        ));
+        y2.addListener((obs, oldV, newV) -> handleCartesianUpdate(
+                () -> {
+                    Point polar = coordinateTransformer.toPolar(
+                            new Point(x2.get(), newV.doubleValue()), angleUnit.get());
+                    r2.set(polar.x());
+                    theta2.set(polar.y());
+                }
+        ));
+
+        r1.addListener((obs, oldV, newV) -> handlePolarUpdate(
+                () -> {
+                    Point cartesian = coordinateTransformer.toCartesian(
+                            new Point(newV.doubleValue(), theta1.get()), angleUnit.get());
+                    x1.set(cartesian.x());
+                    y1.set(cartesian.y());
+                }
+        ));
+        theta1.addListener((obs, oldV, newV) -> handlePolarUpdate(
+                () -> {
+                    Point cartesian = coordinateTransformer.toCartesian(
+                            new Point(r1.get(), newV.doubleValue()), angleUnit.get());
+                    x1.set(cartesian.x());
+                    y1.set(cartesian.y());
+                }
+        ));
+        r2.addListener((obs, oldV, newV) -> handlePolarUpdate(
+                () -> {
+                    Point cartesian = coordinateTransformer.toCartesian(
+                            new Point(newV.doubleValue(), theta2.get()), angleUnit.get());
+                    x2.set(cartesian.x());
+                    y2.set(cartesian.y());
+                }
+        ));
+        theta2.addListener((obs, oldV, newV) -> handlePolarUpdate(
+                () -> {
+                    Point cartesian = coordinateTransformer.toCartesian(
+                            new Point(r2.get(), newV.doubleValue()), angleUnit.get());
+                    x2.set(cartesian.x());
+                    y2.set(cartesian.y());
+                }
+        ));
+    }
+
+    private void handleCartesianUpdate(Runnable updater) {
+        if (isUpdatingFromCode) return;
+        isUpdatingFromCode = true;
+        updater.run();
+        isUpdatingFromCode = false;
+    }
+
+    private void handlePolarUpdate(Runnable updater) {
+        if (isUpdatingFromCode) return;
+        isUpdatingFromCode = true;
+        updater.run();
+        isUpdatingFromCode = false;
+    }
+
     private void subscribeToEvents() {
         // Слушаем изменения настроек от других компонентов (если они будут)
         eventBus.subscribe(SettingsChangedEvent.class, event -> {
@@ -132,8 +414,8 @@ public class MainViewModel {
         return segments;
     }
 
-    public ObjectProperty<Segment> currentSegmentProperty() {
-        return currentSegment;
+    public ObjectProperty<Segment> selectedSegmentProperty() {
+        return selectedSegment;
     }
 
     public ObjectProperty<CoordinateSystem> coordinateSystemProperty() {
@@ -152,7 +434,47 @@ public class MainViewModel {
         return gridConfig;
     }
 
-    public ReadOnlyObjectProperty<LineStyle> lineStyleProperty() {
+    public ObjectProperty<LineStyle> lineStyleProperty() {
         return lineStyle;
     }
+    public LineStyle getLineStyle() {
+        return lineStyle.get();
+    }
+    public void setLineStyle(LineStyle style) {
+        lineStyle.set(style);
+    }
+
+    // --- Getters для новых свойств ---
+    public StringProperty segmentColorProperty() {
+        return segmentColor;
+    }
+
+    public StringProperty backgroundColorProperty() {
+        return backgroundColor;
+    }
+
+    public StringProperty gridColorProperty() {
+        return gridColor;
+    }
+
+    // --- Getters для свойств координат ---
+    public DoubleProperty x1Property() { return x1; }
+    public DoubleProperty y1Property() { return y1; }
+    public DoubleProperty x2Property() { return x2; }
+    public DoubleProperty y2Property() { return y2; }
+    public DoubleProperty r1Property() { return r1; }
+    public DoubleProperty theta1Property() { return theta1; }
+    public DoubleProperty r2Property() { return r2; }
+    public DoubleProperty theta2Property() { return theta2; }
+
+    // --- Getters для инфо-панели ---
+    public StringProperty startPointInfoProperty() { return startPointInfo; }
+    public StringProperty endPointInfoProperty() { return endPointInfo; }
+    public StringProperty segmentLengthInfoProperty() { return segmentLengthInfo; }
+    public StringProperty segmentAngleInfoProperty() { return segmentAngleInfo; }
+
+    // --- Getters для трансформации вида ---
+    public DoubleProperty scaleProperty() { return scale; }
+    public DoubleProperty viewOffsetXProperty() { return viewOffsetX; }
+    public DoubleProperty viewOffsetYProperty() { return viewOffsetY; }
 }

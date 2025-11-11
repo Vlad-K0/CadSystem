@@ -11,11 +11,14 @@ import java.util.List;
  */
 public record DrawingContext(
         List<Segment> segments,
+        Segment selectedSegment,
         String backgroundColor,
         String gridColor,
         String axisColor,
         double gridStep,
         boolean gridVisible,
         boolean axisVisible,
-        LineStyle segmentStyle
+        double scale,
+        double viewOffsetX,
+        double viewOffsetY
 ) { }
