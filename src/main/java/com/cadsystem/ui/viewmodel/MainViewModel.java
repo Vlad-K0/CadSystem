@@ -72,6 +72,11 @@ public class MainViewModel {
     private final StringProperty segmentLengthInfo = new SimpleStringProperty("-");
     private final StringProperty segmentAngleInfo = new SimpleStringProperty("-");
 
+    // --- Свойства для трансформации вида (Pan & Zoom) ---
+    private final DoubleProperty scale = new SimpleDoubleProperty(1.0);
+    private final DoubleProperty viewOffsetX = new SimpleDoubleProperty(0.0);
+    private final DoubleProperty viewOffsetY = new SimpleDoubleProperty(0.0);
+
 
     public MainViewModel(
             EventBus eventBus,
@@ -467,4 +472,9 @@ public class MainViewModel {
     public StringProperty endPointInfoProperty() { return endPointInfo; }
     public StringProperty segmentLengthInfoProperty() { return segmentLengthInfo; }
     public StringProperty segmentAngleInfoProperty() { return segmentAngleInfo; }
+
+    // --- Getters для трансформации вида ---
+    public DoubleProperty scaleProperty() { return scale; }
+    public DoubleProperty viewOffsetXProperty() { return viewOffsetX; }
+    public DoubleProperty viewOffsetYProperty() { return viewOffsetY; }
 }

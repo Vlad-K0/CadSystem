@@ -20,6 +20,7 @@ import javafx.scene.layout.HBox;
 import javafx.scene.layout.BorderPane;
 import javafx.scene.layout.StackPane;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.input.ScrollEvent;
 import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
 import javafx.stage.Stage;
@@ -43,6 +44,9 @@ public class App extends Application {
         WAITING_FOR_END_POINT
     }
     private DrawingState drawingState = DrawingState.IDLE;
+
+    private double lastMouseX = 0;
+    private double lastMouseY = 0;
 
     @Override
     public void start(Stage stage) {
@@ -226,6 +230,26 @@ public class App extends Application {
 
         // Обработка кликов по Canvas
         canvas.setOnMouseClicked(this::handleCanvasClick);
+        canvas.setOnScroll(this::handleCanvasScroll);
+
+        // Обработка перетаскивания для панорамирования
+        canvas.setOnMousePressed(event -> {
+            if (event.isMiddleButtonDown()) {
+                lastMouseX = event.getX();
+                lastMouseY = event.getY();
+            }
+        });
+
+        canvas.setOnMouseDragged(event -> {
+            if (event.isMiddleButtonDown()) {
+                double dx = event.getX() - lastMouseX;
+                double dy = event.getY() - lastMouseY;
+                viewModel.viewOffsetXProperty().set(viewModel.viewOffsetXProperty().get() + dx);
+                viewModel.viewOffsetYProperty().set(viewModel.viewOffsetYProperty().get() + dy);
+                lastMouseX = event.getX();
+                lastMouseY = event.getY();
+            }
+        });
 
         // 6. Привязка UI к ViewModel
         bindViewModel(
@@ -257,6 +281,9 @@ public class App extends Application {
         viewModel.selectedSegmentProperty().addListener(obs -> redraw());
         viewModel.gridConfigProperty().addListener(obs -> redraw());
         viewModel.backgroundColorProperty().addListener(obs -> redraw());
+        viewModel.scaleProperty().addListener(obs -> redraw());
+        viewModel.viewOffsetXProperty().addListener(obs -> redraw());
+        viewModel.viewOffsetYProperty().addListener(obs -> redraw());
         viewModel.lineStyleProperty().addListener(obs -> redraw());
         viewModel.segmentColorProperty().addListener(obs -> {
             // Обновляем цвет в LineStyle
@@ -293,7 +320,10 @@ public class App extends Application {
                 viewModel.gridConfigProperty().get().axisColor(),
                 viewModel.gridConfigProperty().get().gridStep(),
                 viewModel.gridConfigProperty().get().showGrid(),
-                viewModel.gridConfigProperty().get().showAxis()
+                viewModel.gridConfigProperty().get().showAxis(),
+                viewModel.scaleProperty().get(),
+                viewModel.viewOffsetXProperty().get(),
+                viewModel.viewOffsetYProperty().get()
         );
         renderer.render(context);
     }
@@ -420,11 +450,43 @@ public class App extends Application {
 
     // Преобразование X канваса в декартову X
     private double coordinateXFromCanvas(double canvasX) {
-        return canvasX - canvas.getWidth() / 2;
+        return (canvasX - (canvas.getWidth() / 2 + viewModel.viewOffsetXProperty().get())) / viewModel.scaleProperty().get();
     }
 
     // Преобразование Y канваса в декартову Y (Y инвертирована)
     private double coordinateYFromCanvas(double canvasY) {
-        return canvas.getHeight() / 2 - canvasY;
+        return (canvasY - (canvas.getHeight() / 2 + viewModel.viewOffsetYProperty().get())) / -viewModel.scaleProperty().get();
+    }
+
+    private void handleCanvasScroll(ScrollEvent event) {
+        double delta = 1.2;
+        double oldScale = viewModel.scaleProperty().get();
+        double newScale;
+
+        if (event.getDeltaY() < 0) {
+            newScale = oldScale / delta;
+        } else {
+            newScale = oldScale * delta;
+        }
+
+        // Ограничиваем масштаб
+        newScale = Math.max(0.1, Math.min(10.0, newScale));
+
+        double mouseX = event.getX();
+        double mouseY = event.getY();
+
+        // Координаты мыши в системе координат модели до зума
+        double mouseWorldXBefore = (mouseX - (canvas.getWidth() / 2 + viewModel.viewOffsetXProperty().get())) / oldScale;
+        double mouseWorldYBefore = (mouseY - (canvas.getHeight() / 2 + viewModel.viewOffsetYProperty().get())) / -oldScale;
+
+        viewModel.scaleProperty().set(newScale);
+
+        // Координаты мыши в системе координат модели после зума
+        double mouseWorldXAfter = (mouseX - (canvas.getWidth() / 2 + viewModel.viewOffsetXProperty().get())) / newScale;
+        double mouseWorldYAfter = (mouseY - (canvas.getHeight() / 2 + viewModel.viewOffsetYProperty().get())) / -newScale;
+
+        // Корректируем смещение, чтобы точка под курсором осталась на месте
+        viewModel.viewOffsetXProperty().set(viewModel.viewOffsetXProperty().get() - (mouseWorldXAfter - mouseWorldXBefore) * newScale);
+        viewModel.viewOffsetYProperty().set(viewModel.viewOffsetYProperty().get() - (mouseWorldYAfter - mouseWorldYBefore) * -newScale);
     }
 }
