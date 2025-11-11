@@ -1,14 +1,18 @@
 module com.cadsystem {
     requires javafx.controls;
     requires javafx.graphics;
+    requires javafx.fxml; // Добавлено, так как есть в pom.xml
+    requires javafx.base;  // Добавлено для работы Properties
 
-    // Для логирования (если будешь использовать slf4j, как в твоих примерах)
-    // requires org.slf4j;
+    // Для логирования
+    requires org.slf4j;
 
-    // Разрешает JavaFX доступ к твоим пакетам UI
+    // Разрешает JavaFX доступ к вашим пакетам UI
     exports com.cadsystem;
-    exports com.cadsystem.graphics.renderer;
-
-    // Если будут проблемы с доступом к моделям
+    exports com.cadsystem.graphics.render;
     exports com.cadsystem.domain.model;
+    exports com.cadsystem.domain.event;
+
+    // Открываем ViewModel для рефлексии JavaFX (для биндинга Properties)
+    opens com.cadsystem.ui.viewmodel to javafx.base;
 }
