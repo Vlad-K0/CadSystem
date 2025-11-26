@@ -6,6 +6,7 @@ module com.cadsystem {
 
     // Для логирования
     requires org.slf4j;
+    requires java.desktop;
 
     // Разрешает JavaFX доступ к вашим пакетам UI
     exports com.cadsystem;
