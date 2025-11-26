@@ -2,6 +2,7 @@ package com.cadsystem.graphics.render;
 
 import com.cadsystem.domain.model.LineStyle;
 import com.cadsystem.domain.model.Segment;
+import java.awt.geom.AffineTransform;
 
 import java.util.List;
 
@@ -18,7 +19,5 @@ public record DrawingContext(
         double gridStep,
         boolean gridVisible,
         boolean axisVisible,
-        double scale,
-        double viewOffsetX,
-        double viewOffsetY
+        AffineTransform transform
 ) { }

@@ -7,9 +7,13 @@ import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
 import javafx.scene.paint.Color;
 import javafx.scene.paint.Paint;
+import javafx.scene.transform.Affine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.awt.geom.AffineTransform;
+import java.awt.geom.NoninvertibleTransformException;
+import java.awt.geom.Point2D;
 import java.util.Objects;
 
 /**
@@ -17,21 +21,16 @@ import java.util.Objects;
  */
 public class JavaFXRenderer implements Renderer {
 
-    private static final Logger logger = LoggerFactory.getLogger(
-            JavaFXRenderer.class
-    );
+    private static final Logger logger = LoggerFactory.getLogger(JavaFXRenderer.class);
 
     private Canvas canvas;
     private GraphicsContext gc;
     private final EventBus eventBus;
-
-    private double scale = 1.0;
-    private double offsetX = 0.0;
-    private double offsetY = 0.0;
+    private final Affine affine = new Affine(); // Поле класса для переиспользования
 
     public JavaFXRenderer(Canvas canvas, EventBus eventBus) {
         this.eventBus = Objects.requireNonNull(eventBus);
-        setCanvas(canvas); // Используем метод для инициализации
+        setCanvas(canvas);
         logger.debug("JavaFX Renderer инициализирован");
     }
 
@@ -39,9 +38,6 @@ public class JavaFXRenderer implements Renderer {
     public void setCanvas(Canvas canvas) {
         this.canvas = Objects.requireNonNull(canvas);
         this.gc = canvas.getGraphicsContext2D();
-
-        // Оптимизация для Retina/HiDPI
-        // Мы будем рисовать четко, отключая сглаживание пикселей
         gc.setImageSmoothing(false);
     }
 
@@ -53,26 +49,33 @@ public class JavaFXRenderer implements Renderer {
         }
         Objects.requireNonNull(context);
 
-        this.scale = context.scale();
-        this.offsetX = context.viewOffsetX();
-        this.offsetY = context.viewOffsetY();
-
-        // Очищаем canvas
         clearCanvas(context.backgroundColor());
 
-        // Рисуем компоненты в правильном порядке
+        gc.save();
+
+        AffineTransform awtTransform = context.transform();
+        affine.setToTransform(
+            awtTransform.getScaleX(), awtTransform.getShearX(), awtTransform.getTranslateX(),
+            awtTransform.getShearY(), awtTransform.getScaleY(), awtTransform.getTranslateY()
+        );
+        gc.setTransform(affine);
+
         if (context.gridVisible()) {
             renderGrid(context);
         }
-
         if (context.axisVisible()) {
             renderAxis(context);
         }
 
-        // Рисуем геометрические объекты
         for (Segment segment : context.segments()) {
             boolean isSelected = segment.equals(context.selectedSegment());
             renderSegment(segment, segment.style(), isSelected);
+        }
+
+        gc.restore();
+
+        for (Segment segment : context.segments()) {
+            renderMarkers(segment, segment.style(), context.transform());
         }
 
         logger.debug("Отрисовка завершена");
@@ -85,56 +88,49 @@ public class JavaFXRenderer implements Renderer {
     }
 
     private void renderGrid(DrawingContext context) {
-        // Сбрасываем стиль линии на сплошной
         gc.setLineDashes(0);
         gc.setStroke(Color.web(context.gridColor()));
-        gc.setLineWidth(0.5);
+        gc.setLineWidth(0.5 / context.transform().getScaleX());
 
-        double gridStep = context.gridStep() * scale;
-        double width = canvas.getWidth();
-        double height = canvas.getHeight();
+        try {
+            AffineTransform inverse = context.transform().createInverse();
+            Point2D.Double topLeft = new Point2D.Double(0, 0);
+            Point2D.Double bottomRight = new Point2D.Double(canvas.getWidth(), canvas.getHeight());
 
-        // Центр (0,0) в декартовых координатах
-        double centerX = width / 2 + offsetX;
-        double centerY = height / 2 + offsetY;
+            inverse.transform(topLeft, topLeft);
+            inverse.transform(bottomRight, bottomRight);
 
-        // Вертикальные линии
-        for (double x = centerX; x < width; x += gridStep) {
-            gc.strokeLine(x, 0, x, height);
+            double gridStep = context.gridStep();
+
+            for (double x = Math.floor(topLeft.x / gridStep) * gridStep; x < bottomRight.x; x += gridStep) {
+                gc.strokeLine(x, topLeft.y, x, bottomRight.y);
+            }
+            for (double y = Math.floor(topLeft.y / gridStep) * gridStep; y < bottomRight.y; y += gridStep) {
+                gc.strokeLine(topLeft.x, y, bottomRight.x, y);
+            }
+        } catch (NoninvertibleTransformException e) {
+            e.printStackTrace();
         }
-        for (double x = centerX - gridStep; x > 0; x -= gridStep) {
-            gc.strokeLine(x, 0, x, height);
-        }
-
-        // Горизонтальные линии
-        for (double y = centerY; y < height; y += gridStep) {
-            gc.strokeLine(0, y, width, y);
-        }
-        for (double y = centerY - gridStep; y > 0; y -= gridStep) {
-            gc.strokeLine(0, y, width, y);
-        }
-
-        logger.debug("Сетка отрисована с шагом {}", gridStep);
     }
 
     private void renderAxis(DrawingContext context) {
-        // Сбрасываем стиль линии на сплошной
         gc.setLineDashes(0);
-        double width = canvas.getWidth();
-        double height = canvas.getHeight();
-        double centerX = width / 2 + offsetX;
-        double centerY = height / 2 + offsetY;
-
         gc.setStroke(Color.web(context.axisColor()));
-        gc.setLineWidth(1.0); // Оси могут быть чуть толще сетки
+        gc.setLineWidth(1.0 / context.transform().getScaleX());
 
-        // Ось X
-        gc.strokeLine(0, centerY, width, centerY);
+        try {
+            AffineTransform inverse = context.transform().createInverse();
+            Point2D.Double topLeft = new Point2D.Double(0, 0);
+            Point2D.Double bottomRight = new Point2D.Double(canvas.getWidth(), canvas.getHeight());
 
-        // Ось Y
-        gc.strokeLine(centerX, 0, centerX, height);
+            inverse.transform(topLeft, topLeft);
+            inverse.transform(bottomRight, bottomRight);
 
-        logger.debug("Оси координат отрисованы");
+            gc.strokeLine(topLeft.x, 0, bottomRight.x, 0);
+            gc.strokeLine(0, topLeft.y, 0, bottomRight.y);
+        } catch (NoninvertibleTransformException e) {
+            e.printStackTrace();
+        }
     }
 
     private void renderSegment(Segment segment, LineStyle style, boolean isSelected) {
@@ -147,32 +143,24 @@ public class JavaFXRenderer implements Renderer {
             gc.setLineDashes(0);
         }
 
-        // Преобразуем координаты в экранные координаты
-        double x1 = canvasXFromCoordinate(segment.start().x());
-        double y1 = canvasYFromCoordinate(segment.start().y());
-        double x2 = canvasXFromCoordinate(segment.end().x());
-        double y2 = canvasYFromCoordinate(segment.end().y());
+        double x1 = segment.start().x();
+        double y1 = segment.start().y();
+        double x2 = segment.end().x();
+        double y2 = segment.end().y();
 
         gc.strokeLine(x1, y1, x2, y2);
+    }
 
-        // Рисуем маркеры точек
+    private void renderMarkers(Segment segment, LineStyle style, AffineTransform transform) {
+        Point2D.Double p1 = new Point2D.Double(segment.start().x(), segment.start().y());
+        Point2D.Double p2 = new Point2D.Double(segment.end().x(), segment.end().y());
+
+        transform.transform(p1, p1);
+        transform.transform(p2, p2);
+
         double markerSize = 6;
         gc.setFill(Color.web(style.color()));
-        gc.fillOval(x1 - markerSize / 2, y1 - markerSize / 2,
-                markerSize, markerSize);
-        gc.fillOval(x2 - markerSize / 2, y2 - markerSize / 2,
-                markerSize, markerSize);
-
-        logger.debug("Отрезок отрисован: {}, isSelected: {}", segment, isSelected);
-    }
-
-    // Преобразование декартовой X в X канваса
-    private double canvasXFromCoordinate(double x) {
-        return (canvas.getWidth() / 2) + offsetX + x * scale;
-    }
-
-    // Преобразование декартовой Y в Y канваса (Y инвертирована)
-    private double canvasYFromCoordinate(double y) {
-        return (canvas.getHeight() / 2) + offsetY - y * scale;
+        gc.fillOval(p1.x - markerSize / 2, p1.y - markerSize / 2, markerSize, markerSize);
+        gc.fillOval(p2.x - markerSize / 2, p2.y - markerSize / 2, markerSize, markerSize);
     }
 }
